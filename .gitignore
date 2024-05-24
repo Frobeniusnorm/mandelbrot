@@ -37,3 +37,4 @@ compile_commands.json
 # build stuff
 build/
 mandelbrot
+.cache/
