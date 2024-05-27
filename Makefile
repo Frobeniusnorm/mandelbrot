@@ -1,5 +1,5 @@
 CXXC := acpp
-CXXFLAGS := -O3 -std=c++17
+CXXFLAGS := -Og -g 
 
 CPP_SOURCES := $(wildcard src/*.cpp)
 HPP_SOURCES := $(wildcard src/*.hpp)

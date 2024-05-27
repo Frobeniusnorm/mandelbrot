@@ -16,6 +16,9 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "cmdparser.hpp"
+#include "mandelbrot.hpp"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.hpp"
 
 std::string generate_help() {
   using namespace std;
@@ -36,4 +39,7 @@ int main(int argc, char **argv) {
   cli::Parser parser(argc, argv, generate_help());
   parser.enable_help();
   parser.run();
+  MandelbrotRenderer renderer(3000, 2000);
+  std::vector<unsigned char>& img_data = renderer.generate_image(-2, 1, -1, 1);
+  stbi_write_jpg("test.jpg", 3000, 2000, 3, img_data.data(), 100);
 }

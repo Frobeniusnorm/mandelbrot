@@ -17,7 +17,6 @@
  */
 #ifndef MANDELBROT_HPP
 #define MANDELBROT_HPP
-#include "CL/sycl.hpp"
 #include <vector>
 struct MandelbrotRenderer {
   unsigned int res_width;
@@ -25,15 +24,12 @@ struct MandelbrotRenderer {
 
   MandelbrotRenderer(unsigned int res_width, unsigned int res_height)
       : res_width(res_width), res_height(res_height),
-        working_image(res_width * res_height * 3, 0),
-        image_buffer(res_width * res_height * 3) {}
+        working_image(res_width * res_height * 3, 0) {}
 
-  std::vector<float> generate_image(double x_min, double x_max, double y_min,
+  std::vector<unsigned char>& generate_image(double x_min, double x_max, double y_min,
                                     double y_max);
 
 private:
-  std::vector<float> working_image;
-  cl::sycl::queue Q;
-  cl::sycl::buffer<float> image_buffer;
+  std::vector<unsigned char> working_image;
 };
 #endif
