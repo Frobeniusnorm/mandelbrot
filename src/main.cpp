@@ -37,9 +37,22 @@ Copyright (C) 2024  Sven Vollmar & David Schwarzbeck)";
 
 int main(int argc, char **argv) {
   cli::Parser parser(argc, argv, generate_help());
-  parser.enable_help();
+  parser.set_default(false, "output file", std::string("mandelbrot.jpg"));
+  parser.set_optional("x1", "xmin", -2., "Minimum of draw area on the x (real) axis");
+  parser.set_optional("x2", "xmax", 1., "Maximum of draw area on the x (real) axis");
+  parser.set_optional("y1", "ymin", -1., "Minimum of draw area on the y (imaginary) axis");
+  parser.set_optional("y2", "ymax", 1., "Maximum of draw area on the y (imaginary) axis");
+  parser.set_optional("x", "width", 3000, "Image width");
+  parser.set_optional("y", "height", 2000, "Image height");
   parser.run();
-  MandelbrotRenderer renderer(3000, 2000);
-  std::vector<unsigned char>& img_data = renderer.generate_image(-2, 1, -1, 1);
-  stbi_write_jpg("test.jpg", 3000, 2000, 3, img_data.data(), 100);
+  const int width = parser.get<int>("x");
+  const int height = parser.get<int>("y");
+  const double x1 = parser.get<double>("x1");
+  const double x2 = parser.get<double>("x2");
+  const double y1 = parser.get<double>("y1");
+  const double y2 = parser.get<double>("y2");
+  const std::string name = parser.get_default<std::string>();
+  MandelbrotRenderer renderer(width, height);
+  std::vector<unsigned char>& img_data = renderer.generate_image(x1, x2, y1, y2);
+  stbi_write_jpg(name.c_str(), width, height, 3, img_data.data(), 100);
 }
