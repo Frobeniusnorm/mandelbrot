@@ -20,8 +20,6 @@
 #include <sycl/sycl.hpp>
 
 using namespace sycl;
-const unsigned char COLOR_SET1[][3] = {
-    {255, 255, 255}, {100, 250, 150}, {50, 200, 200}, {50, 130, 230}};
 static size_t max_iterations(double xlims) {
   // no mathematical proof, just approximation
   return 50 + (long)sycl::pow(sycl::log10(((4. / xlims))), 5);
@@ -56,27 +54,13 @@ void mandelbrot(queue &Q, double x_min, double x_max, double y_min,
       // apply smoothing
       if (iter < max_iter) {
         const double log_zn = sycl::log(c_x * c_x + c_y * c_y) / 2;
-        const double nu = sycl::log2(log_zn / sycl::log(2.));
+        const double nu = sycl::log(log_zn / sycl::log(2.)) / sycl::log(2.);
         const double iters = iter + 1 - nu;
         // map to color map, higher iterations -> higher index
-        const int NUM_COLORS = (sizeof(COLOR_SET1) / (sizeof(char) * 3));
-        const int color_idx =
-            (int)(((int)iters / (double)max_iter) * NUM_COLORS);
-        // determine percentage where iters is in the spectrum of the minimum of
-        // the current color and the next
-        const int needed_iters_idx =
-            (color_idx / (double)NUM_COLORS) * max_iter;
-        const int needed_iters_next =
-            ((color_idx + 1) / (double)NUM_COLORS) * max_iter;
-        const double interpolate =
-            (iters - needed_iters_idx) /
-            (double)(needed_iters_next - needed_iters_idx);
-        for (int j = 0; j < 3; j++) {
-          char col1 = color_idx < NUM_COLORS ? COLOR_SET1[color_idx][j] : 0;
-          char col2 = color_idx + 1 < NUM_COLORS ? COLOR_SET1[color_idx + 1][j] : 0;
-          img[i * 3 + j] =
-              (char)((int)col1 + interpolate * ((int)col2 - (int)col1));
-        }
+		const double progress = iters / max_iter;
+		img[i * 3] = (char)(sycl::clamp(1.0 - 1.8 * progress, 0., 1.) * 256);
+		img[i * 3 + 1] = (char)((1.0 - 0.4 * progress) * 256);
+		img[i * 3 + 2] = (char)(progress * 256) + (char)(sycl::clamp(1.0 - sycl::sqrt(progress), 0., 1.) * 256);
       } else {
         // not diverging
         for (int j = 0; j < 3; j++) {
