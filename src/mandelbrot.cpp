@@ -17,6 +17,7 @@
  */
 
 #include "mandelbrot.hpp"
+#include "bigfloat.hpp"
 #include <sycl/sycl.hpp>
 
 using namespace sycl;
@@ -24,7 +25,7 @@ static size_t max_iterations(double xlims) {
   // no mathematical proof, just approximation
   return 50 + (long)sycl::pow(sycl::log10(((4. / xlims))), 5);
 }
-
+template <size_t bytes>
 void mandelbrot(queue &Q, double x_min, double x_max, double y_min,
                 double y_max, std::vector<unsigned char> &res, size_t res_width,
                 size_t res_height) {
@@ -32,28 +33,42 @@ void mandelbrot(queue &Q, double x_min, double x_max, double y_min,
   Q.submit([&](auto &h) {
     accessor img(image_buffer, h, write_only, no_init);
     h.parallel_for(res.size() / 3, [=](item<1> i) {
+      // somehow it breaks if a fixedfloat is used more than once?
+      const FixedFloat<bytes> two = FixedFloat<bytes>(2.);
+      const FixedFloat<bytes> barrier = FixedFloat<bytes>((double)(1 << 16));
       const int yi = i / res_width; // screen space in [0, res_width]
       const int xi = i % res_width; // screen space in [0, res_height]
       const double x = xi / (double)(res_width - 1);  // screen space in [0, 1]
       const double y = yi / (double)(res_height - 1); // screen space in [0, 1]
-      const double x0 = x * sycl::fabs(x_max - x_min) +
-                        x_min; // complex plane in [x_min, x_max]
-      const double y0 = y * sycl::fabs(y_max - y_min) +
-                        y_min; // complex plane in [y_min, y_max]
-      double c_x = 0;
-      double c_y = 0;
+      const FixedFloat<bytes> x0(x * sycl::fabs(x_max - x_min) +
+                                 x_min); // complex plane in [x_min, x_max]
+      const FixedFloat<bytes> y0 = (y * sycl::fabs(y_max - y_min) +
+                                    y_min); // complex plane in [y_min, y_max]
+
+      FixedFloat<bytes> c_x(0.0);
+      FixedFloat<bytes> c_y(0.0);
       const size_t max_iter = max_iterations(sycl::fabs(x_max - x_min));
       // simulate complex conjecture
+      FixedFloat<bytes> cx_squared;
+      FixedFloat<bytes> cy_squared;
+      FixedFloat<bytes> newx;
+      FixedFloat<bytes> newy;
       size_t iter = 0;
-      for (; iter < max_iter && c_x * c_x + c_y * c_y <= (1 << 16); iter++) {
-        const double new_x = c_x * c_x - c_y * c_y + x0;
-        const double new_y = 2 * c_x * c_y + y0;
-        c_x = new_x;
-        c_y = new_y;
+      for (; iter < max_iter; iter++) {
+        cx_squared = c_x * c_x;
+        cy_squared = c_y * c_y;
+        if (cx_squared + cy_squared > barrier)
+          break;
+        newx = cx_squared - cy_squared + x0;
+        newy = two * c_x * c_y + y0;
+        c_x = newx;
+        c_y = newy;
       }
       // apply smoothing
       if (iter < max_iter) {
-        const double log_zn = sycl::log(c_x * c_x + c_y * c_y) / 2;
+        double rcx = *c_x;
+        double rcy = *c_y;
+        const double log_zn = sycl::log(rcx * rcx + rcy * rcy) / 2;
         const double nu = sycl::log(log_zn / sycl::log(2.)) / sycl::log(2.);
         const double iters = iter + 1 - nu;
         // map to color map, higher iterations -> higher index
@@ -87,7 +102,7 @@ std::vector<unsigned char> &MandelbrotRenderer::generate_image(double x_min,
                                                                double y_max) {
   default_selector device_selector;
   queue Q(device_selector);
-  mandelbrot(Q, x_min, x_max, y_min, y_max, working_image, res_width,
-             res_height);
+  mandelbrot<16>(Q, x_min, x_max, y_min, y_max, working_image, res_width,
+                 res_height);
   return working_image;
 }
