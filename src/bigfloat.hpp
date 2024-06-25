@@ -1,6 +1,9 @@
 #ifndef BIG_FLOAT
 #define BIG_FLOAT
 #include <algorithm>
+#include <array>
+#include <iostream>
+#include <ostream>
 typedef unsigned long size_t;
 
 typedef union DoubleAndLong {
@@ -21,53 +24,55 @@ template <size_t bytes> struct FixedFloat {
     DoubleAndLong conv;
     conv.val = init;
     const long init_data = conv.binary;
-    // first the fraction (6 bytes + 4 bits)
-    // exponent (1 byte + 3 bits)
-    const long exponent = (init_data & (0x7FFl << 52)) >> 52;
-    data[size_mantissa] = exponent & 0xFFl;
-    data[size_mantissa + 1] = (exponent & 0x700l) >> 8;
-    // now adapt the bias by adding as many binary 1s as the exponential has
-    for (int i = 0; i < 52; i++) {
-      const size_t d = init_data & (1l << i);
-      const size_t bits = size_mantissa * 8 - 52 + i;
-      const size_t byte = bits / 8;
-      const char bit = bits % 8;
-      if (d)
-        data[byte] |= 1 << bit;
-      else
-        data[byte] &= ~(1 << bit);
-    }
-    // additional digits
-    {
-      const size_t double_expo = 11;
-      char carry = 0;
-      for (size_t i = size_mantissa * 8 + double_expo - 1;
-           i < (size_mantissa + size_exponent) * 8 - 1; i++) {
-        const size_t byte = i / 8;
-        const size_t bit = i % 8;
-        const unsigned char old_val = (data[byte] & (1 << bit)) == 0 ? 0 : 1;
-        // addition
-        const char new_val = old_val + carry + 1;
-        if (new_val == 1) {
-          data[byte] |= (1 << bit); // set to 1 (carry and old_val were 0)
-        } else if (new_val == 2) {
-          // set to 0 and set carry (either carry or old_val was set)
-          data[byte] &= ~(1 << bit); // the digit was 1, we got no carry
-                                     // -> it becomes 10, carry is set
-          // else the digit was 0, we got a carry and a 1 -> keep carry
-          carry = 1;
-        } else { // 3
-                 // carry is set, value is set
-          data[byte] |= (1 << bit);
-          carry = 1;
+    if (!is_zero(init)) {
+      // first the fraction (6 bytes + 4 bits)
+      // exponent (1 byte + 3 bits)
+      const long exponent = (init_data & (0x7FFl << 52)) >> 52;
+      data[size_mantissa] = exponent & 0xFFl;
+      data[size_mantissa + 1] = (exponent & 0x700l) >> 8;
+      // now adapt the bias by adding as many binary 1s as the exponential has
+      for (int i = 0; i < 52; i++) {
+        const size_t d = init_data & (1l << i);
+        const size_t bits = size_mantissa * 8 - 52 + i;
+        const size_t byte = bits / 8;
+        const char bit = bits % 8;
+        if (d)
+          data[byte] |= 1 << bit;
+        else
+          data[byte] &= ~(1 << bit);
+      }
+      // additional digits
+      {
+        const size_t double_expo = 11;
+        char carry = 0;
+        for (size_t i = size_mantissa * 8 + double_expo - 1;
+             i < (size_mantissa + size_exponent) * 8 - 1; i++) {
+          const size_t byte = i / 8;
+          const size_t bit = i % 8;
+          const unsigned char old_val = (data[byte] & (1 << bit)) == 0 ? 0 : 1;
+          // addition
+          const char new_val = old_val + carry + 1;
+          if (new_val == 1) {
+            data[byte] |= (1 << bit); // set to 1 (carry and old_val were 0)
+          } else if (new_val == 2) {
+            // set to 0 and set carry (either carry or old_val was set)
+            data[byte] &= ~(1 << bit); // the digit was 1, we got no carry
+                                       // -> it becomes 10, carry is set
+            // else the digit was 0, we got a carry and a 1 -> keep carry
+            carry = 1;
+          } else { // 3
+                   // carry is set, value is set
+            data[byte] |= (1 << bit);
+            carry = 1;
+          }
+        }
+        if (carry == 1) {
+          // highest exponent bit becomes 1
+          data[size_mantissa + size_exponent - 1] |= 0x80;
         }
       }
-      if (carry == 1) {
-        // highest exponent bit becomes 1
-        data[size_mantissa + size_exponent - 1] |= 0x80;
-      }
     }
-    sign = (init_data & (0x1l << 63)) >> 63;
+    sign = (init_data & (1l << 63)) ? 1 : 0;
   }
   FixedFloat() {
     size_mantissa = (size_t)(bytes / 1.3);
@@ -90,6 +95,15 @@ template <size_t bytes> struct FixedFloat {
   }
   void operator+=(FixedFloat<bytes> b) {
     // check if abs of a is > abs b
+    if (b.is_zero())
+      return; // do nothing
+    if (is_zero()) {
+      // set to b
+      for (size_t i = 0; i < data.size(); i++)
+        data[i] = b.data[i];
+      sign = b.sign;
+      return;
+    }
     const long shift = calculate_mantissa_shift(b);
     const long shift_a = shift < 0 ? -shift : 0;
     const long shift_b = shift > 0 ? shift : 0;
@@ -120,6 +134,15 @@ template <size_t bytes> struct FixedFloat {
     }
   }
   void operator-=(FixedFloat<bytes> b) {
+    if (b.is_zero())
+      return; // do nothing
+    if (is_zero()) {
+      // set to b
+      for (size_t i = 0; i < data.size(); i++)
+        data[i] = b.data[i];
+      sign = b.sign ? 0 : 1; // flip bs sign
+      return;
+    }
     const long shift = calculate_mantissa_shift(b);
     const long shift_a = shift < 0 ? -shift : 0;
     const long shift_b = shift > 0 ? shift : 0;
@@ -157,6 +180,8 @@ template <size_t bytes> struct FixedFloat {
     return c;
   }
   double operator*() const {
+    if (is_zero())
+      return 0.0;
     // copy the exponent
     DoubleAndLong conv;
     long final = 0;
@@ -246,12 +271,6 @@ template <size_t bytes> struct FixedFloat {
   bool operator<(const FixedFloat<bytes> b) const {
     return !(*this > b) && (*this != b);
   }
-  bool operator<=(const FixedFloat<bytes> b) const {
-    return *this < b || *this == b;
-  }
-  bool operator>=(const FixedFloat<bytes> b) const {
-    return *this > b || *this == b;
-  }
   // mul
   FixedFloat<bytes> operator*(FixedFloat<bytes> b) const {
     FixedFloat<bytes> res(*this);
@@ -260,8 +279,18 @@ template <size_t bytes> struct FixedFloat {
   }
   void operator*=(FixedFloat<bytes> b) {
     using namespace std;
-    // if one is negative, the sign is negative
-    sign = (sign ^ b.sign) ? 1 : 0;
+    // if exact one is negative, the sign is negative
+	int oldsign = sign;
+	double vala = **this;
+    sign = (sign == b.sign) ? 0 : 1;
+    if (is_zero())
+      return; // do nothing
+    if (b.is_zero()) {
+      // set to zero
+      for (size_t i = 0; i < data.size(); i++)
+        data[i] = 0;
+      return;
+    }
     // we put the mantissa of a in its working mantissa
     for (size_t i = 0; i < size_mantissa; i++) {
       working_mantissa[i] = data[i];
@@ -283,6 +312,27 @@ template <size_t bytes> struct FixedFloat {
         carry = 1;
       else
         carry = 0;
+    }
+    // and we have to subtract the bias once
+    {
+      bool was_carry = carry;
+      carry = 0;
+      for (size_t i = 0; i < size_exponent * 8; i++) {
+        const size_t byte = i / 8;
+        const char bit = i % 8;
+        const char data_a = (data[size_mantissa + byte] & (1l << bit)) >> bit;
+        const char data_b = i < size_exponent * 8 - 1 ? 1 : 0;
+        const char sum = data_a - data_b - carry;
+        if (sum % 2 == 0 || (data_b == 0 && !was_carry &&
+                             sum < 0)) // set to 0 if last bit can't borrow
+          data[size_mantissa + byte] &= ~(1 << bit);
+        else
+          data[size_mantissa + byte] |= (1 << bit);
+        if (sum < 0)
+          carry = 1;
+        else
+          carry = 0;
+      }
     }
     bool has_one = false; // if the implicit one is present in the result
     // multiply mantissa
@@ -365,16 +415,11 @@ template <size_t bytes> struct FixedFloat {
       if (sum > 1)
         shift_and_add_exponent((sum % 2 == 0 ? 0 : 1));
       // i have no idea why i would need the following line
-      add_one_to_exponent();
+      // add_one_to_exponent();
     }
   }
-  FixedFloat<bytes> abs() const {
-    FixedFloat<bytes> res(*this);
-    res.sign = 0;
-    return res;
-  }
 
-protected:
+  // protected:
   size_t size_mantissa; // in bytes
   size_t size_exponent; // in bytes
   char sign = 1;
@@ -441,7 +486,7 @@ protected:
         data[size_mantissa + byte_aj] |= (1 << bit_aj);
     }
   }
-  size_t calculate_mantissa_shift(const FixedFloat<bytes> &b) const {
+  long calculate_mantissa_shift(const FixedFloat<bytes> &b) const {
     // exponent may differ -> the one with the lower exponent has to be right
     // shifted to match the higher
     // count difference between this and b in exponent. If > 0 -> b has to be
@@ -638,6 +683,19 @@ protected:
       else
         carry = 0;
     }
+  }
+  bool is_zero() const {
+    for (char d : data)
+      if (d)
+        return false;
+    return true;
+  }
+  bool is_zero(double a) const {
+    DoubleAndLong conv;
+    conv.val = a;
+    // set sign to zero
+    conv.binary &= ~(1l << 63);
+    return conv.binary == 0;
   }
 };
 
