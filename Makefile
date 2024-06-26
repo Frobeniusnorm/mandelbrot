@@ -1,5 +1,5 @@
-CXXC := acpp
-CXXFLAGS := -O3 
+CXXC :=/usr/local/bin/acpp
+CXXFLAGS := -O3 -fopenmp=libomp -lomp
 
 CPP_SOURCES := $(wildcard src/*.cpp)
 HPP_SOURCES := $(wildcard src/*.hpp)
@@ -8,7 +8,7 @@ CPP_OBJECTS := $(patsubst src/%.cpp,build/%.o,$(CPP_SOURCES))
 .PHONY: build
 
 mandelbrot: $(CPP_OBJECTS) | build
-	$(CXXC) -o $@ $(CPP_OBJECTS) 
+	$(CXXC) $(CXXFLAGS) -o $@ $(CPP_OBJECTS) 
 
 build/%.o: src/%.cpp $(HPP_SOURCES) | build
 	$(CXXC) $(CXXFLAGS) -c -o $@ $<
