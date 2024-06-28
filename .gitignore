@@ -39,3 +39,4 @@ build/
 mandelbrot
 .cache/
 *.jpg
+*.mp4
