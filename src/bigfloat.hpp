@@ -277,6 +277,11 @@ template <size_t bytes> struct FixedFloat {
     res *= b;
     return res;
   }
+  FixedFloat<bytes> abs() const {
+    FixedFloat<bytes> res(*this);
+    res.sign = 0;
+    return res;
+  }
   void operator*=(FixedFloat<bytes> b) {
     using namespace std;
     // if exact one is negative, the sign is negative

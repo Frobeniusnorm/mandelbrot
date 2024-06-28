@@ -1,5 +1,5 @@
-CXXC :=/usr/local/bin/acpp
-CXXFLAGS := -O3 -fopenmp=libomp -lomp
+CXXC :=/usr/local/bin/acpp 
+CXXFLAGS := -O3 -fopenmp=libomp
 
 CPP_SOURCES := $(wildcard src/*.cpp)
 HPP_SOURCES := $(wildcard src/*.hpp)
