@@ -19,9 +19,14 @@
 #include "mandelbrot.hpp"
 #include <iomanip>
 #include <string>
+#include <sys/stat.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.hpp"
 
+inline bool exists(const std::string &name) {
+  struct stat buffer;
+  return (stat(name.c_str(), &buffer) == 0);
+}
 template <size_t bytes>
 static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
                       FixedFloat<bytes> y1, FixedFloat<bytes> y2, int i,
@@ -29,8 +34,6 @@ static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
                       MandelbrotRenderer &renderer, std::string name, int width,
                       int height) {
 
-  std::vector<unsigned char> &img_data =
-      renderer.generate_image(x1, x2, y1, y2);
   std::string path = name + "/";
   {
     std::stringstream iss;
@@ -38,8 +41,13 @@ static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
     std::string is = iss.str();
     path += is + ".jpg";
   }
-  stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
-  std::cout << "generated " << path << std::endl;
+  if (!exists(path)) {
+    std::vector<unsigned char> &img_data =
+        renderer.generate_image(x1, x2, y1, y2);
+    stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
+    std::cout << "generated " << path << std::endl;
+  } else
+    std::cout << "skipping " << path << std::endl;
   // reduce the size
   FixedFloat<bytes> x_space = (x2 - x1);
   FixedFloat<bytes> y_space = (y2 - y1);
@@ -53,9 +61,10 @@ static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
   auto ydiff = (y_space - y_space_new) * 0.5;
   y1 += ydiff;
   y2 -= ydiff;
-  if (i < iterations)
+  if (i < iterations) {
     deep_zoom(x1, x2, y1, y2, i + 1, iterations, zoom, renderer, name, width,
               height);
+  }
 }
 
 std::string generate_help() {
@@ -111,17 +120,21 @@ int main(int argc, char **argv) {
     stbi_write_jpg(name.c_str(), width, height, 3, img_data.data(), 100);
   } else {
     for (int i = 0; i < iterations; i++) {
-      std::vector<unsigned char> &img_data =
-          renderer.generate_image(x1, x2, y1, y2);
       std::string path = name + "/";
       {
         std::stringstream iss;
-        iss << std::setw(log(iterations) / log(10.0) + 1) << std::setfill('0') << i;
+        iss << std::setw(log(iterations) / log(10.0) + 1) << std::setfill('0')
+            << i;
         std::string is = iss.str();
         path += is + ".jpg";
       }
-      stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
-      std::cout << "generated " << path << std::endl;
+      if (!exists(path)) {
+        std::vector<unsigned char> &img_data =
+            renderer.generate_image(x1, x2, y1, y2);
+        stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
+        std::cout << "generated " << path << std::endl;
+      } else
+        std::cout << "skipping " << path << std::endl;
       // reduce the size
       double x_space = (x2 - x1);
       double y_space = (y2 - y1);
@@ -135,10 +148,10 @@ int main(int argc, char **argv) {
       y1 += (y_space - y_space_new) * di;
       y2 -= (y_space - y_space_new) * (1 - di);
       if (x_space_new < 0.00001) {
-        std::cout << "switching to BigFloat 16 bytes" << std::endl;
+        std::cout << "switching to BigFloat 12 bytes" << std::endl;
         auto ffspeed = FixedFloat<12>(speed);
         deep_zoom(FixedFloat<12>(x1), FixedFloat<12>(x2), FixedFloat<12>(y1),
-                  FixedFloat<12>(y2), i, iterations, ffspeed, renderer, name,
+                  FixedFloat<12>(y2), i + 1, iterations, ffspeed, renderer, name,
                   width, height);
       }
     }
