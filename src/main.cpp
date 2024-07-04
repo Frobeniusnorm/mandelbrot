@@ -20,8 +20,10 @@
 #include <iomanip>
 #include <string>
 #include <sys/stat.h>
+#include <sys/time.h>
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.hpp"
+static struct timeval timestamp_start, timestamp_stop;
 
 inline bool exists(const std::string &name) {
   struct stat buffer;
@@ -42,10 +44,16 @@ static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
     path += is + ".jpg";
   }
   if (!exists(path)) {
+    gettimeofday(&timestamp_start, nullptr);
     std::vector<unsigned char> &img_data =
         renderer.generate_image(x1, x2, y1, y2);
     stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
-    std::cout << "generated " << path << std::endl;
+    gettimeofday(&timestamp_stop, nullptr);
+    long millis = timestamp_stop.tv_usec - timestamp_start.tv_usec;
+    std::cout << "generated " << path << " in "
+              << (millis > 10000 ? std::to_string(millis / 1000) + "s"
+                                 : std::to_string(millis) + "ms")
+              << std::endl;
   } else
     std::cout << "skipping " << path << std::endl;
   // reduce the size
@@ -82,7 +90,7 @@ Mandelbrot - a mandelbrot zoom application with SyCL
 Copyright (C) 2024  Sven Vollmar & David Schwarzbeck)";
   return help;
 }
-
+typedef FixedFloat<16> FF16;
 int main(int argc, char **argv) {
   cli::Parser parser(argc, argv, generate_help());
   parser.set_default(false, "output file or folder",
@@ -109,14 +117,18 @@ int main(int argc, char **argv) {
   const int iterations = parser.get<int>("n");
   const std::string name = parser.get_default<std::string>();
   std::cout << iterations << std::endl;
-  double x1 = -2;
-  double x2 = 1;
-  double y1 = -1;
-  double y2 = 1;
+  FF16 x1 = -2;
+  FF16 x2 = 1;
+  FF16 y1 = -1;
+  FF16 y2 = 1;
+  const FF16 ffre (re);
+  const FF16 ffim (im);
+  const FF16 ffone (1.0);
+  const FF16 ffspeed (speed);
   MandelbrotRenderer renderer(width, height);
   if (iterations == 1) {
     std::vector<unsigned char> &img_data =
-        renderer.generate_image(x1, x2, y1, y2);
+        renderer.generate_image(*x1, *x2, *y1, *y2);
     stbi_write_jpg(name.c_str(), width, height, 3, img_data.data(), 100);
   } else {
     for (int i = 0; i < iterations; i++) {
@@ -129,30 +141,38 @@ int main(int argc, char **argv) {
         path += is + ".jpg";
       }
       if (!exists(path)) {
+        gettimeofday(&timestamp_start, nullptr);
         std::vector<unsigned char> &img_data =
-            renderer.generate_image(x1, x2, y1, y2);
+            renderer.generate_image(*x1, *x2, *y1, *y2);
+        gettimeofday(&timestamp_stop, nullptr);
         stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
-        std::cout << "generated " << path << std::endl;
+		long starttime = timestamp_start.tv_sec * 1000 + timestamp_start.tv_usec / 1000;
+		long stoptime = timestamp_stop.tv_sec * 1000 + timestamp_stop.tv_usec / 1000;
+        long millis = stoptime - starttime;
+        std::cout << "generated " << path << " in "
+                  << (millis > 10000000l ? std::to_string(millis / 1000000l) + "s"
+                                     : std::to_string(millis / 1000) + "ms")
+                  << " (x-size: " << (*x2 - *x1) << ")" << std::endl;
       } else
         std::cout << "skipping " << path << std::endl;
       // reduce the size
-      double x_space = (x2 - x1);
-      double y_space = (y2 - y1);
-      double x_space_new = (x2 - x1) * speed;
-      double y_space_new = (y2 - y1) * speed;
+      FF16 x_space = (x2 - x1);
+      FF16 y_space = (y2 - y1);
+      FF16 x_space_new = (x2 - x1) * speed;
+      FF16 y_space_new = (y2 - y1) * speed;
       // adapt the start s.t. we zoom towards re and im
-      double dr = (re - x1) / (x2 - x1);
-      double di = (im - y1) / (y2 - y1);
+      FF16 dr = FF16(*(ffre - x1) / *(x2 - x1));
+      FF16 di = FF16(*(ffim - y1) / *(y2 - y1));
       x1 += (x_space - x_space_new) * dr;
-      x2 -= (x_space - x_space_new) * (1 - dr);
+      x2 -= (x_space - x_space_new) * (ffone - dr);
       y1 += (y_space - y_space_new) * di;
-      y2 -= (y_space - y_space_new) * (1 - di);
-      if (x_space_new < 0.00001) {
+      y2 -= (y_space - y_space_new) * (ffone - di);
+      if (x_space_new < 3.5e-12) {
         std::cout << "switching to BigFloat 12 bytes" << std::endl;
         auto ffspeed = FixedFloat<12>(speed);
-        deep_zoom(FixedFloat<12>(x1), FixedFloat<12>(x2), FixedFloat<12>(y1),
-                  FixedFloat<12>(y2), i + 1, iterations, ffspeed, renderer, name,
-                  width, height);
+        deep_zoom(FixedFloat<12>(*x1), FixedFloat<12>(*x2), FixedFloat<12>(*y1),
+                  FixedFloat<12>(*y2), i + 1, iterations, ffspeed, renderer,
+                  name, width, height);
       }
     }
   }

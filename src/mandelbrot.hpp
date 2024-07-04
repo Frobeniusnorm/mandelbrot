@@ -18,6 +18,7 @@
 #ifndef MANDELBROT_HPP
 #define MANDELBROT_HPP
 #include "bigfloat.hpp"
+#include <atomic>
 #include <cmath>
 #include <vector>
 struct MandelbrotRenderer {
@@ -46,17 +47,19 @@ struct MandelbrotRenderer {
   }
 
 private:
-  static size_t max_iterations(double xlims) {
-    // no mathematical proof, just approximation
-    // was: return 50 + (int)sycl::pow(sycl::log10(((256. / xlims))), 3);
-    return 50 + (int)std::pow(std::log10(((256. / xlims))), 5);
-  }
-  static void mandelbrot_double(double x_min, double x_max, double y_min,
-                                double y_max, std::vector<unsigned char> &res,
-                                size_t res_width, size_t res_height) {
-    const size_t max_iter = max_iterations(std::fabs(x_max - x_min));
+  size_t iterations = 50;
+  double last_upper_percentile = 0;
+  double last_lower_percentile = 0;
+  void mandelbrot_double(double x_min, double x_max, double y_min, double y_max,
+                         std::vector<unsigned char> &res, size_t res_width,
+                         size_t res_height) {
+    const size_t max_iter = iterations;
     std::cout << "image generation with " << max_iter << " iterations... "
               << std::flush;
+    // count how many are in the lower and how many are in the upper 10% to
+    // update the iterations
+    std::atomic<int> lower_percentile = 0;
+    std::atomic<int> upper_percentile = 0;
 #pragma omp parallel for
     for (int i = 0; i < res.size() / 3; i++) {
       const int yi = i / res_width; // screen space in [0, res_width]
@@ -90,6 +93,11 @@ private:
         const double iters = iter + 1 - nu;
         // map to color map, higher iterations -> higher index
         const double progress = iters / max_iter;
+        if (progress < 0.2 && progress > 0.05)
+          lower_percentile++;
+        else if (progress > 0.5) {
+          upper_percentile++;
+        }
 
         res[i * 3] = 0;
         res[i * 3 + 1] = progress * 255;
@@ -101,17 +109,35 @@ private:
         }
       }
     }
+	last_lower_percentile = (int)(last_lower_percentile * 0.8 + lower_percentile.load() * 0.2);
+	last_upper_percentile = (int)(last_upper_percentile * 0.8 + upper_percentile.load() * 0.2);
+    double lower_percentile_percentage =
+        last_lower_percentile / (res.size() / 3.0);
+    double upper_percentile_percentage =
+        last_upper_percentile / (res.size() / 3.0);
+    std::cout << " .. upper " << upper_percentile_percentage << ", lower "
+              << lower_percentile_percentage << " ";
+    if (upper_percentile.load() > 0) {
+      // increase
+      iterations += upper_percentile_percentage * 1300;
+    }
+    if (lower_percentile.load() > 0) {
+      // decrease
+      iterations =
+          std::max(50, (int)(iterations - lower_percentile_percentage * 100));
+    }
     std::cout << "... finished" << std::endl;
   }
   template <size_t bytes>
-  static void
-  mandelbrot_openmp(FixedFloat<bytes> x_min, FixedFloat<bytes> x_max,
-                    FixedFloat<bytes> y_min, FixedFloat<bytes> y_max,
-                    std::vector<unsigned char> &res, size_t res_width,
-                    size_t res_height) {
-    const size_t max_iter = max_iterations(*(x_max - x_min));
+  void mandelbrot_openmp(FixedFloat<bytes> x_min, FixedFloat<bytes> x_max,
+                         FixedFloat<bytes> y_min, FixedFloat<bytes> y_max,
+                         std::vector<unsigned char> &res, size_t res_width,
+                         size_t res_height) {
+    const size_t max_iter = iterations;
     std::cout << "image generation with " << max_iter << " iterations... "
               << std::flush;
+    std::atomic<int> lower_percentile = 0;
+    std::atomic<int> upper_percentile = 0;
 #pragma omp parallel for
     for (size_t i = 0; i < res_width * res_height; i++) {
       const int yi = i / res_width; // screen space in [0, res_width]
@@ -147,22 +173,38 @@ private:
         const double iters = iter + 1 - nu;
         // map to color map, higher iterations -> higher index
         const double progress = iters / max_iter;
-        res[i * 3] =
-            (char)(std::clamp(std::clamp(1.0 - 1.8 * progress, 0., 1.) +
-                                  2 * progress * progress,
-                              0., 1.) *
-                   255);
-        res[i * 3 + 1] = (char)((1.0 - 0.4 * progress) * 256);
-        res[i * 3 + 2] =
-            (char)(std::clamp(1.0 - std::sqrt(progress) + progress, 0., 1.) *
-                   255);
+        if (progress < 0.2 && progress > 0.01)
+          lower_percentile++;
+        else if (progress > 0.5) {
+          upper_percentile++;
+        }
+        res[i * 3] = 0;
+        res[i * 3 + 1] = progress * 255;
+        res[i * 3 + 2] = progress * 255;
       } else {
         // not diverging
         for (int j = 0; j < 3; j++) {
           res[i * 3 + j] = 0;
         }
       }
-    };
+    }
+	last_lower_percentile = (int)(last_lower_percentile * 0.8 + lower_percentile.load() / 0.2);
+	last_upper_percentile = (int)(last_upper_percentile * 0.8 + lower_percentile.load() / 0.2);
+    double lower_percentile_percentage =
+        last_lower_percentile / (res.size() / 3.0);
+    double upper_percentile_percentage =
+        last_upper_percentile / (res.size() / 3.0);
+    std::cout << " .. upper " << upper_percentile_percentage << ", lower "
+              << lower_percentile_percentage << " ";
+    if (upper_percentile.load() > 0) {
+      // increase
+      iterations += upper_percentile_percentage * 1200;
+    }
+    if (lower_percentile.load() > 0) {
+      // decrease
+      iterations =
+          std::max(50, (int)(iterations - lower_percentile_percentage * 100));
+    }
     std::cout << "... finished" << std::endl;
   }
   std::vector<unsigned char> working_image;
