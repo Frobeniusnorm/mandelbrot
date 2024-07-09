@@ -30,12 +30,15 @@ inline bool exists(const std::string &name) {
   return (stat(name.c_str(), &buffer) == 0);
 }
 template <size_t bytes>
-static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
-                      FixedFloat<bytes> y1, FixedFloat<bytes> y2, int i,
-                      const int iterations, const FixedFloat<bytes> &zoom,
-                      MandelbrotRenderer &renderer, std::string name, int width,
-                      int height) {
+static void
+deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2, FixedFloat<bytes> y1,
+          FixedFloat<bytes> y2, int i, const int iterations,
+          const FixedFloat<bytes> &zoom, const FixedFloat<bytes> &ffre,
+          const FixedFloat<bytes> &ffim, MandelbrotRenderer &renderer,
+          std::string name, int width, int height) {
 
+  const FixedFloat<bytes> ffone(1.0);
+  const FixedFloat<bytes> coeff(2 << (bytes / 2));
   std::string path = name + "/";
   {
     std::stringstream iss;
@@ -63,15 +66,18 @@ static void deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2,
   FixedFloat<bytes> y_space_new = (y2 - y1) * zoom;
   // adapt the start s.t. we zoom towards re and im
   // TODO if i come to implement division it would be helpful here
-  auto xdiff = (x_space - x_space_new) * 0.5;
-  x1 += xdiff;
-  x2 -= xdiff;
-  auto ydiff = (y_space - y_space_new) * 0.5;
-  y1 += ydiff;
-  y2 -= ydiff;
+  auto dr = FixedFloat<bytes>(*(coeff * (ffre - x1)) / *(coeff * (x2 - x1)));
+  auto di = FixedFloat<bytes>(*(coeff * (ffim - y1)) / *(coeff * (y2 - y1)));
+  auto xdiff = x_space - x_space_new;
+  auto ydiff = y_space - y_space_new;
+
+  x1 += (x_space - x_space_new) * dr;
+  x2 -= (x_space - x_space_new) * (ffone - dr);
+  y1 += (y_space - y_space_new) * di;
+  y2 -= (y_space - y_space_new) * (ffone - di);
   if (i < iterations) {
-    deep_zoom(x1, x2, y1, y2, i + 1, iterations, zoom, renderer, name, width,
-              height);
+    deep_zoom(x1, x2, y1, y2, i + 1, iterations, zoom, ffre, ffim, renderer,
+              name, width, height);
   }
 }
 
@@ -121,10 +127,11 @@ int main(int argc, char **argv) {
   FF16 x2 = 1;
   FF16 y1 = -1;
   FF16 y2 = 1;
-  const FF16 ffre (re);
-  const FF16 ffim (im);
-  const FF16 ffone (1.0);
-  const FF16 ffspeed (speed);
+  const FF16 ffre(re);
+  const FF16 ffim(im);
+  const FF16 ffone(1.0);
+  const FF16 coeff(2 << 8);
+  const FF16 ffspeed(speed);
   MandelbrotRenderer renderer(width, height);
   if (iterations == 1) {
     std::vector<unsigned char> &img_data =
@@ -146,33 +153,36 @@ int main(int argc, char **argv) {
             renderer.generate_image(*x1, *x2, *y1, *y2);
         gettimeofday(&timestamp_stop, nullptr);
         stbi_write_jpg(path.c_str(), width, height, 3, img_data.data(), 100);
-		long starttime = timestamp_start.tv_sec * 1000 + timestamp_start.tv_usec / 1000;
-		long stoptime = timestamp_stop.tv_sec * 1000 + timestamp_stop.tv_usec / 1000;
+        long starttime =
+            timestamp_start.tv_sec * 1000 + timestamp_start.tv_usec / 1000;
+        long stoptime =
+            timestamp_stop.tv_sec * 1000 + timestamp_stop.tv_usec / 1000;
         long millis = stoptime - starttime;
         std::cout << "generated " << path << " in "
-                  << (millis > 10000000l ? std::to_string(millis / 1000000l) + "s"
-                                     : std::to_string(millis / 1000) + "ms")
+                  << (millis > 10000000l
+                          ? std::to_string(millis / 1000000l) + "s"
+                          : std::to_string(millis / 1000) + "ms")
                   << " (x-size: " << (*x2 - *x1) << ")" << std::endl;
       } else
         std::cout << "skipping " << path << std::endl;
       // reduce the size
       FF16 x_space = (x2 - x1);
       FF16 y_space = (y2 - y1);
-      FF16 x_space_new = (x2 - x1) * speed;
-      FF16 y_space_new = (y2 - y1) * speed;
+      FF16 x_space_new = (x2 - x1) * ffspeed;
+      FF16 y_space_new = (y2 - y1) * ffspeed;
       // adapt the start s.t. we zoom towards re and im
-      FF16 dr = FF16(*(ffre - x1) / *(x2 - x1));
-      FF16 di = FF16(*(ffim - y1) / *(y2 - y1));
+	  //
+      auto dr = FF16(*(coeff * (ffre - x1)) / *(coeff * (x2 - x1)));
+      auto di = FF16(*(coeff * (ffim - y1)) / *(coeff * (y2 - y1)));
       x1 += (x_space - x_space_new) * dr;
       x2 -= (x_space - x_space_new) * (ffone - dr);
       y1 += (y_space - y_space_new) * di;
       y2 -= (y_space - y_space_new) * (ffone - di);
       if (x_space_new < 3.5e-12) {
-        std::cout << "switching to BigFloat 12 bytes" << std::endl;
-        auto ffspeed = FixedFloat<12>(speed);
-        deep_zoom(FixedFloat<12>(*x1), FixedFloat<12>(*x2), FixedFloat<12>(*y1),
-                  FixedFloat<12>(*y2), i + 1, iterations, ffspeed, renderer,
-                  name, width, height);
+        std::cout << "switching to BigFloat 16 bytes" << std::endl;
+        deep_zoom(FixedFloat<16>(*x1), FixedFloat<16>(*x2), FixedFloat<16>(*y1),
+                  FixedFloat<16>(*y2), i + 1, iterations, ffspeed, ffre, ffim,
+                  renderer, name, width, height);
       }
     }
   }
