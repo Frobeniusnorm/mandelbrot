@@ -83,6 +83,67 @@ template <size_t bytes> struct FixedFloat {
         working_mantissa[i] = 0;
     }
   }
+  template <size_t nbytes> FixedFloat<nbytes> to_precision() const {
+    FixedFloat<nbytes> res;
+    // copy mantissa
+    if (res.size_mantissa > size_mantissa) {
+      for (size_t i = 0; i < size_mantissa; i++)
+        res.data[i + (res.size_mantissa - size_mantissa)] = data[i];
+    } else {
+      for (size_t i = 0; i < res.size_mantissa; i++) {
+        res.data[i] = data[i + (size_mantissa - res.size_mantissa)];
+      }
+    }
+    // copy exponent
+    for (size_t i = 0; i < std::min(res.size_exponent, size_exponent); i++) {
+      res.data[res.size_mantissa + i] = data[size_mantissa + i];
+    }
+    // the bias has to be adapted
+    // the bias is for k = exponent size in bits: 2^(k-1) - 1 -> binary ones to
+    // k - 1 then zeros (k-1 is zero)
+    if (res.size_exponent > size_exponent) {
+      // if k2 > k1 -> bias is now higher!
+      // we have to add bits to the fields (k1 - 1) to (k2 - 1)
+      char carry = 0;
+      for (size_t i = size_exponent * 8 - 1; i < res.size_exponent * 8 - 1;
+           i++) {
+        const size_t byte = i / 8;
+        const size_t bit = i % 8;
+        const char old_val = res.data[byte] & (1 << bit);
+        // addition
+        const char new_val = old_val + carry + 1;
+        if (new_val == 1) {
+          res.data[byte] |= (1 << bit); // set to 1 (carry and old_val were 0)
+        } else if (new_val == 2) {
+          // set to 0 and set carry (either carry or old_val was set)
+          res.data[byte] &= ~(1 << bit); // the digit was 1, we got no carry
+                                         // -> it becomes 10, carry is set
+          // else the digit was 0, we got a carry and a 1 -> keep carry
+          carry = 1;
+        } else { // 3
+                 // carry is set, value is set
+          res.data[byte] |= (1 << bit);
+          carry = 1;
+        }
+      }
+      // now we have to keep simulating the carry
+      for (size_t i = res.size_exponent; i < size_exponent && carry; i++) {
+        const size_t byte = i / 8;
+        const size_t bit = i % 8;
+        const char old_val = res.data[byte] & (1 << bit);
+        if (old_val == 0 && carry == 1) {
+          carry = 0;
+          res.data[byte] |= (1 << bit);
+        } else if (old_val == 1 && carry == 1) {
+          res.data[byte] &= ~(1 << bit);
+        }
+      }
+    } else {
+      // TODO
+    }
+    res.sign = sign;
+    return res;
+  }
   FixedFloat<bytes> operator+(FixedFloat<bytes> b) const {
     FixedFloat<bytes> c = FixedFloat<bytes>(*this);
     c += b;

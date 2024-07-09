@@ -45,8 +45,9 @@ struct MandelbrotRenderer {
   generate_image(FixedFloat<bytes> x_min, FixedFloat<bytes> x_max,
                  FixedFloat<bytes> y_min, FixedFloat<bytes> y_max) {
     // TODO choose between openmp and mandelbrot_new_gpu
-    mandelbrot_openmp(x_min, x_max, y_min, y_max, working_image, res_width,
+    mandelbrot_new_gpu(Q, x_min, x_max, y_min, y_max, working_image, res_width,
                       res_height);
+
     return working_image;
   }
 
@@ -100,22 +101,9 @@ private:
           // map to color map, higher iterations -> higher index
           const double progress = iters / max_iter;
 
-		  img[i * 3] = 0;
-		  img[i * 3 + 1] = progress * 255;
-		  img[i * 3 + 2] = progress * 255;
-          //img[i * 3] =
-          //    (char)(sycl::clamp(
-          //               sycl::clamp(1.0 - 1.8 * progress * progress * progress,
-          //                           0., 1.) +
-          //                   progress * progress * progress * progress,
-          //               0., 1.) *
-          //           255);
-          //img[i * 3 + 1] =
-          //    (char)((1.0 - 0.4 * progress * progress * progress) * 255);
-          //img[i * 3 + 2] =
-          //    (char)(sycl::clamp(1.0 - (sycl::sqrt(progress) + progress), 0.,
-          //                       1.) *
-          //           255);
+          img[i * 3] = 0;
+          img[i * 3 + 1] = progress * 255;
+          img[i * 3 + 2] = progress * 255;
         } else {
           // not diverging
           for (int j = 0; j < 3; j++) {
@@ -174,15 +162,9 @@ private:
         const double iters = iter + 1 - nu;
         // map to color map, higher iterations -> higher index
         const double progress = iters / max_iter;
-        res[i * 3] =
-            (char)(std::clamp(std::clamp(1.0 - 1.8 * progress, 0., 1.) +
-                                  2 * progress * progress,
-                              0., 1.) *
-                   255);
-        res[i * 3 + 1] = (char)((1.0 - 0.4 * progress) * 256);
-        res[i * 3 + 2] =
-            (char)(std::clamp(1.0 - std::sqrt(progress) + progress, 0., 1.) *
-                   255);
+        res[i * 3] = 0;
+        res[i * 3 + 1] = progress * 255;
+        res[i * 3 + 2] = progress * 255;
       } else {
         // not diverging
         for (int j = 0; j < 3; j++) {
@@ -240,16 +222,9 @@ private:
           const double iters = iter + 1 - nu;
           // map to color map, higher iterations -> higher index
           const double progress = iters / max_iter;
-          img[i * 3] =
-              (char)(sycl::clamp(sycl::clamp(1.0 - 1.8 * progress, 0., 1.) +
-                                     2 * progress * progress,
-                                 0., 1.) *
-                     255);
-          img[i * 3 + 1] = (char)((1.0 - 0.4 * progress) * 256);
-          img[i * 3 + 2] =
-              (char)(sycl::clamp(1.0 - sycl::sqrt(progress) + progress, 0.,
-                                 1.) *
-                     255);
+          img[i * 3] = 0;
+          img[i * 3 + 1] = progress * 255;
+          img[i * 3 + 2] = progress * 255;
         } else {
           // not diverging
           for (int j = 0; j < 3; j++) {
