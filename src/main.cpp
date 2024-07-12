@@ -172,12 +172,14 @@ int main(int argc, char **argv) {
       FF16 y_space_new = (y2 - y1) * ffspeed;
       // adapt the start s.t. we zoom towards re and im
 	  //
-      auto dr = FF16(*(coeff * (ffre - x1)) / *(coeff * (x2 - x1)));
-      auto di = FF16(*(coeff * (ffim - y1)) / *(coeff * (y2 - y1)));
-      x1 += (x_space - x_space_new) * dr;
-      x2 -= (x_space - x_space_new) * (ffone - dr);
-      y1 += (y_space - y_space_new) * di;
-      y2 -= (y_space - y_space_new) * (ffone - di);
+      auto dr = FF16(*(coeff * (ffre - x1)) / *(coeff * x_space));
+      auto di = FF16(*(coeff * (ffim - y1)) / *(coeff * y_space));
+	  auto x_space_diff = x_space - x_space_new;
+	  auto y_space_diff = y_space - y_space_new;
+      x1 += x_space_diff * dr;
+      x2 -= x_space_diff * (ffone - dr);
+      y1 += y_space_diff * di;
+      y2 -= y_space_diff * (ffone - di);
       if (x_space_new < 3.5e-12) {
         std::cout << "switching to BigFloat 16 bytes" << std::endl;
         deep_zoom(FixedFloat<16>(*x1), FixedFloat<16>(*x2), FixedFloat<16>(*y1),
