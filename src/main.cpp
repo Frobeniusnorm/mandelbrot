@@ -36,7 +36,7 @@ deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2, FixedFloat<bytes> y1,
           const FixedFloat<bytes> &zoom, const FixedFloat<bytes> &ffre,
           const FixedFloat<bytes> &ffim, MandelbrotRenderer &renderer,
           std::string name, int width, int height) {
-
+  // constants
   const FixedFloat<bytes> ffone(1.0);
   const FixedFloat<bytes> coeff(2 << (bytes / 2));
   std::string path = name + "/";
@@ -46,6 +46,7 @@ deep_zoom(FixedFloat<bytes> x1, FixedFloat<bytes> x2, FixedFloat<bytes> y1,
     std::string is = iss.str();
     path += is + ".jpg";
   }
+  // only generate images that don't have been calculated already
   if (!exists(path)) {
     gettimeofday(&timestamp_start, nullptr);
     std::vector<unsigned char> &img_data =
@@ -134,10 +135,13 @@ int main(int argc, char **argv) {
   const FF16 ffspeed(speed);
   MandelbrotRenderer renderer(width, height);
   if (iterations == 1) {
+    // generate one image
     std::vector<unsigned char> &img_data =
         renderer.generate_image(*x1, *x2, *y1, *y2);
     stbi_write_jpg(name.c_str(), width, height, 3, img_data.data(), 100);
   } else {
+    // generate iterations images, when the precision is too low for the zoom,
+    // switch to 16-byte bigfloats.
     for (int i = 0; i < iterations; i++) {
       std::string path = name + "/";
       {
@@ -171,7 +175,6 @@ int main(int argc, char **argv) {
       FF16 x_space_new = (x2 - x1) * ffspeed;
       FF16 y_space_new = (y2 - y1) * ffspeed;
       // adapt the start s.t. we zoom towards re and im
-	  //
       auto dr = FF16(*(coeff * (ffre - x1)) / *(coeff * (x2 - x1)));
       auto di = FF16(*(coeff * (ffim - y1)) / *(coeff * (y2 - y1)));
       x1 += (x_space - x_space_new) * dr;

@@ -1,4 +1,4 @@
-CXXC :=/usr/local/bin/acpp 
+CXXC :=acpp 
 CXXFLAGS := -O3 -fopenmp=libomp
 
 CPP_SOURCES := $(wildcard src/*.cpp)
